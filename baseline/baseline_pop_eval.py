@@ -1,14 +1,19 @@
 import argparse
 import json
-import math
+import os
 from collections import Counter
+
 import pandas as pd
+
+from eval_recall_metrics import evaluate_rows, save_metrics
+
 
 def read_jsonl(path):
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 yield json.loads(line)
+
 
 def time_split_indices(n, train_ratio=0.8, val_ratio=0.1):
     if n < 3:
@@ -22,19 +27,12 @@ def time_split_indices(n, train_ratio=0.8, val_ratio=0.1):
             return None
     return n_train, n_val
 
-def recall_at_k(rank, target, k):
-    return 1.0 if target in rank[:k] else 0.0
-
-def ndcg_at_k(rank, target, k):
-    if target in rank[:k]:
-        p = rank.index(target)
-        return 1.0 / math.log2(p + 2)
-    return 0.0
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--raw_csv", type=str, default='./KuaiRec 2.0/data/small_matrix.csv', help="small_matrix.csv or big_matrix.csv")
-    ap.add_argument("--eval_jsonl", type=str, default='./data/processed/small_matrix_sw/test.jsonl', help="processed/.../test.jsonl or val.jsonl")
+    ap.add_argument("--raw_csv", type=str, default="./KuaiRec 2.0/data/small_matrix.csv", help="small_matrix.csv or big_matrix.csv")
+    ap.add_argument("--eval_jsonl", type=str, default="./data/processed/small_matrix_sw/test.jsonl", help="processed/.../test.jsonl or val.jsonl")
+    ap.add_argument("--metrics_out", type=str, default="", help="output json for metrics")
     ap.add_argument("--user_col", type=str, default="user_id")
     ap.add_argument("--item_col", type=str, default="video_id")
     ap.add_argument("--ts_col", type=str, default="timestamp")
@@ -42,10 +40,10 @@ def main():
     ap.add_argument("--val_ratio", type=float, default=0.1)
     ap.add_argument("--ks", type=str, default="20,50,100")
     args = ap.parse_args()
-    ks = [int(x) for x in args.ks.split(",")]
+
+    ks = [int(x) for x in args.ks.split(",") if x.strip()]
     kmax = max(ks)
 
-    # 1) 读原始交互 + 排序（同 timestamp 用行号打破平局）
     df = pd.read_csv(args.raw_csv, usecols=[args.user_col, args.item_col, args.ts_col])
     df = df.dropna()
     df[args.ts_col] = pd.to_numeric(df[args.ts_col], errors="coerce")
@@ -54,30 +52,23 @@ def main():
     df["__row__"] = range(len(df))
     df = df.sort_values([args.user_col, args.ts_col, "__row__"], kind="mergesort")
 
-    # 2) 按“每个用户自己的时间线”切分，只统计 train 段交互的热度
     cnt = Counter()
-    for u, g in df.groupby(args.user_col, sort=False):
+    for _, g in df.groupby(args.user_col, sort=False):
         items = g[args.item_col].astype(int).tolist()
-        n = len(items)
-        sp = time_split_indices(n, args.train_ratio, args.val_ratio)
+        sp = time_split_indices(len(items), args.train_ratio, args.val_ratio)
         if sp is None:
             continue
-        n_train, n_val = sp
-        train_items = items[:n_train]
-        cnt.update(train_items)
+        n_train, _ = sp
+        cnt.update(items[:n_train])
 
     popular = [it for it, _ in cnt.most_common()]
     if len(popular) == 0:
         raise RuntimeError("Popularity list is empty. Check raw_csv columns / split settings.")
 
-    # 3) 在 eval_jsonl 上评估（过滤已看过 history）
-    rec_sum = {k: 0.0 for k in ks}
-    ndcg_sum = {k: 0.0 for k in ks}
-    n_users = 0
-
+    rows = []
     for r in read_jsonl(args.eval_jsonl):
         seen = set(r["history"])
-        target = r["target"]
+        target = int(r["target"])
 
         rank = []
         for it in popular:
@@ -86,14 +77,19 @@ def main():
             if len(rank) >= kmax:
                 break
 
-        n_users += 1
-        for k in ks:
-            rec_sum[k] += recall_at_k(rank, target, k)
-            ndcg_sum[k] += ndcg_at_k(rank, target, k)
+        rows.append({"rank": rank, "target": target})
 
-    print(f"users={n_users}  popular_size={len(popular)}")
+    metrics = evaluate_rows(rows, ks)
+    metrics["popular_size"] = len(popular)
+
+    metrics_out = args.metrics_out or os.path.join(os.path.dirname(args.eval_jsonl), "pop_metrics.json")
+    save_metrics(metrics_out, metrics)
+
+    print(f"users={metrics['users']}  popular_size={len(popular)}")
     for k in ks:
-        print(f"Recall@{k}: {rec_sum[k]/n_users:.6f}   NDCG@{k}: {ndcg_sum[k]/n_users:.6f}")
+        print(f"Recall@{k}: {metrics[f'Recall@{k}']:.6f}   NDCG@{k}: {metrics[f'NDCG@{k}']:.6f}")
+    print(f"metrics_saved: {metrics_out}")
+
 
 if __name__ == "__main__":
     main()
