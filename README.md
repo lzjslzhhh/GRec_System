@@ -1,69 +1,68 @@
 # GRec_System
 
-一个面向 **搜索/推荐实习** 的端到端实验项目：  
-**语义ID（离散化表征） + 生成式召回（Gen Retrieval） + 多任务精排（MTL Ranker）**
+一个面向**搜索/推荐实习**的端到端实验项目：  
+**语义 ID（离散化表征）+ 生成式召回（Gen Retrieval）+ 多任务精排（MTL Ranker）**
 
-当前已完成：
+## 当前进度
+
 - ✅ KuaiRec 数据落地（`small_matrix.csv` 跑通全流程）
 - ✅ 用户序列构建（稳定排序）
-- ✅ 按用户时间线切分 train/val/test（严格无泄漏）
-- ✅ 仅 train 段滑动窗口构造训练样本（next-item）
+- ✅ 按用户时间线切分 `train/val/test`（严格无泄漏）
+- ✅ 仅 `train` 段滑动窗口构造训练样本（next-item）
 - ✅ Popularity 召回 baseline（从原始交互统计 train 热度 + seen filter）
+- ✅ ItemCF 召回 baseline + 覆盖率诊断
 - ✅ 离线指标跑通（Recall/NDCG）
-
----
 
 ## 1. 目标概述
 
 ### 1.1 输入
-- 用户历史行为序列（click/cart/buy…）
-- item 内容特征（category/title/brand/caption… *后续在语义ID阶段引入*）
+
+- 用户历史行为序列（click/cart/buy...）
+- item 内容特征（category/title/brand/caption...，后续在语义 ID 阶段引入）
 
 ### 1.2 输出
-1) item 的 **语义ID**（离散 token 串）  
-2) **生成式召回**：给定用户序列生成 TopK 候选 item（基于语义ID生成）  
-3) **多任务精排**：对候选进行 CTR/CVR/CTCVR/停留时长等多目标排序  
+
+1. item 的**语义 ID**（离散 token 串）
+2. **生成式召回**：给定用户序列生成 TopK 候选 item（基于语义 ID 生成）
+3. **多任务精排**：对候选进行 CTR/CVR/CTCVR/停留时长等多目标排序
 
 ### 1.3 评估指标
+
 - 召回：Recall@K、NDCG@K
 - 精排：AUC、GAUC、LogLoss（可选：Calibration）
 - 端到端：NDCG@K / HitRate@K（最终列表）
-
----
 
 ## 2. 数据集
 
 - 数据集：**KuaiRec**
 - 当前使用：`small_matrix.csv`（已跑通全流程）
-- 原始交互表关键字段（当前项目用到）：
-  - `user_id`
-  - `video_id`
-  - `timestamp`
+- 原始交互表关键字段（当前项目用到）：`user_id`、`video_id`、`timestamp`
 
-说明：
-- 后续语义ID阶段将进一步引入 KuaiRec 的 item 侧信息（如类别/文本/caption 等）。
-
----
+说明：后续语义 ID 阶段将进一步引入 KuaiRec 的 item 侧信息（如类别/文本/caption 等）。
 
 ## 3. 数据预处理（已完成）
 
 ### 3.1 用户序列构建
+
 从 `small_matrix.csv` 读取 `user_id, video_id, timestamp`，对每个用户按 `timestamp` 升序排序得到序列：
+
 `[(video_1, t_1), (video_2, t_2), ...]`
 
 为避免同一用户同一时间戳下顺序不稳定，使用**行号**作为次级排序键（稳定排序）。
 
 ### 3.2 时间切分（严格防泄漏）
+
 对每个用户序列按比例切分（按用户时间线）：
+
 - train：前 80%
 - val：中间 10%
 - test：最后 10%
 
-> 切分方式为「按用户时间线切分」，保证 test 是“未来”。  
-> 训练统计与模型训练均不使用 val/test 信息。
+> 切分方式为“按用户时间线切分”，保证 test 是未来。训练统计与模型训练均不使用 val/test 信息。
 
 ### 3.3 滑动窗口多样本（训练集，仅 train 段）
-仅在 **train 段** 做滑动窗口生成多条 next-item 样本：
+
+仅在 `train` 段做滑动窗口生成多条 next-item 样本：
 
 - 对 train 序列 `[(v1,t1),...,(vn,tn)]`
 - 对每个位置 `i`（从 `min_hist_len` 到 `n-1`）构造：
@@ -71,18 +70,21 @@
   - `target = seq[i]`
 
 关键参数（当前配置）：
+
 - `max_seq_len = 50`
 - `min_hist_len = 3`
 - `stride = 1`
 - `max_train_samples_per_user = 200`（每个用户最多保留最近 200 条样本）
 
 ### 3.4 val/test 构造方式（每个用户 1 条样本）
+
 - val：使用（train + val）历史预测 val 最后一次
 - test：使用（train + val + test）历史预测 test 最后一次
 
-> 注：当前实现以“每个用户最后一次交互”为预测目标，确保评估对齐“未来一步”。
+> 当前实现以“每个用户最后一次交互”为预测目标，确保评估对齐未来一步。
 
 ### 3.5 预处理统计结果
+
 ```json
 {
   "users_total": 1411,
@@ -91,103 +93,197 @@
   "train_samples": 282200,
   "avg_train_samples_per_user": 200.0
 }
-3.6 输出文件
+```
 
-processed/small_matrix_sw/train.jsonl
+### 3.6 输出文件
 
-processed/small_matrix_sw/val.jsonl
+- `data/processed/small_matrix_sw/train.jsonl`
+- `data/processed/small_matrix_sw/val.jsonl`
+- `data/processed/small_matrix_sw/test.jsonl`
+- `data/processed/small_matrix_sw/stats.json`
 
-processed/small_matrix_sw/test.jsonl
+## 4. Baseline 召回
 
-processed/small_matrix_sw/stats.json
-
-4. Baseline：Popularity 召回（已完成）
-4.1 统计口径（严格无泄漏）
+### 4.1 Popularity 统计口径（严格无泄漏）
 
 热度统计来自原始交互表的 train 时间段（按用户时间线切分后的 train 段交互）：
 
-✅ 不使用滑窗样本统计热度（避免滑窗导致 history 重复计数放大）
+- 不使用滑窗样本统计热度（避免滑窗导致 history 重复计数放大）
+- 推荐阶段对每个用户：
+  - 从热门榜按顺序取 TopK
+  - `seen filter`：过滤掉用户 `history` 里已经看过的 item
 
-✅ 推荐阶段对每个用户：
+### 4.2 Popularity 评估结果（test）
 
-从热门榜按顺序取 TopK
-
-seen filter：过滤掉用户 history 里已经看过的 item
-
-4.2 评估结果（test）
+```text
 users=1411  popular_size=3044
 Recall@20 : 0.001417   NDCG@20 : 0.000391
 Recall@50 : 0.016300   NDCG@50 : 0.003185
 Recall@100: 0.099220   NDCG@100: 0.016360
-5. 运行方式（当前阶段）
-5.1 预处理（滑窗多样本）
-python preprocess_kuairec_sw.py \
-  --data_dir . --matrix small_matrix.csv \
-  --out_dir processed \
+```
+
+### 4.3 ItemCF 评估结果（test）
+
+```text
+users=1411  itemcf_size=1995  train_item_size=3044
+Recall@20 : 0.119773   NDCG@20 : 0.055135
+Recall@50 : 0.131821   NDCG@50 : 0.057643
+Recall@100: 0.133239   NDCG@100: 0.057886
+```
+
+### 4.4 ItemCF 覆盖率诊断（为什么 Recall 会被卡住）
+
+在 test 集（1411 个 target）上，统计结果如下：
+
+- `target_in_train = 460 / 1411 = 32.60%`
+  - 含义：只有 32.6% 的 test target 在训练交互里出现过（其余属于冷启动/未见过，纯协同过滤天然学不到）
+- `target_in_itemcf = 453 / 1411 = 32.10%`
+  - 含义：在训练中出现过的 item 里，仍有一部分没有进入 ItemCF 可用节点（无邻居或被过滤）
+- `target_reachable = 188 / 1411 = 13.32%`
+  - 含义：对当前每个用户的 history，target 能从 ItemCF 图“一跳召回”到的比例只有 13.32%
+
+关键解释：
+
+- `itemcf_size=1995` 表示 ItemCF 图中“有邻居可用”的 item 数（`itemcf_topk` 的 key 数）
+- 它小于 `train_item_size=3044`，说明有不少训练 item 没有形成稳定共现邻居（受去重、窗口、`min_co` 等影响）
+- 当前配置下，`target_reachable_ratio=13.32%` 与 `Recall@100=13.32%` 基本一致，说明瓶颈主要不是排序，而是候选覆盖（可达性）上限
+
+## 5. 运行方式（当前阶段）
+
+### 5.1 预处理（滑窗多样本）
+
+```bash
+python preprocess/preprocess_kuairec.py \
+  --data_dir "./KuaiRec 2.0/data" \
+  --matrix small_matrix.csv \
+  --out_dir ./data/processed \
   --min_seq_len 5 \
-  --max_seq_len 50 --min_hist_len 3 \
-  --stride 1 --max_train_samples_per_user 200
-5.2 Popularity baseline（从原始交互统计 train 热度）
-python baseline_pop_from_raw.py \
-  --raw_csv small_matrix.csv \
-  --eval_jsonl processed/small_matrix_sw/test.jsonl \
-  --train_ratio 0.8 --val_ratio 0.1 \
+  --max_seq_len 50 \
+  --min_hist_len 3 \
+  --stride 1 \
+  --max_train_samples_per_user 200
+```
+
+### 5.2 Popularity baseline（从原始交互统计 train 热度）
+
+```bash
+python baseline/baseline_pop_eval.py \
+  --raw_csv "./KuaiRec 2.0/data/small_matrix.csv" \
+  --eval_jsonl "./data/processed/small_matrix_sw/test.jsonl" \
+  --train_ratio 0.8 \
+  --val_ratio 0.1 \
   --ks 20,50,100
-6. 目录结构（建议）
+```
+
+### 5.3 ItemCF baseline（从原始交互构建共现图）
+
+```bash
+python -m baseline.baseline_itemcf_from_raw \
+  --raw_csv "./KuaiRec 2.0/data/small_matrix.csv" \
+  --eval_jsonl "./data/processed/small_matrix_sw/test.jsonl" \
+  --train_ratio 0.8 \
+  --val_ratio 0.1 \
+  --topk_sim 200 \
+  --co_window 50 \
+  --min_co 1.0 \
+  --recent_n 10 \
+  --pos_decay 0.8 \
+  --ks 20,50,100
+```
+
+## 6. 目录结构
+
+```text
 GRec_System/
-  data/
-    small_matrix.csv
-  processed/
-    small_matrix_sw/
-      train.jsonl
-      val.jsonl
-      test.jsonl
-      stats.json
-  preprocess_kuairec_sw.py
-  baseline_pop_from_raw.py
-  README.md
-7. 下一步计划（Next）
-7.1 召回 baseline 强化（更强对照）
+├── README.md
+├── KuaiRec 2.0/
+│   └── data/
+│       └── small_matrix.csv
+├── preprocess/
+│   └── preprocess_kuairec.py
+├── baseline/
+│   ├── baseline_pop_eval.py
+│   ├── baseline_itemcf_from_raw.py
+│   └── eval_recall_metrics.py
+└── data/
+    └── processed/
+        └── small_matrix_sw/
+            ├── train.jsonl
+            ├── val.jsonl
+            ├── test.jsonl
+            ├── stats.json
+            ├── pop_metrics.json
+            └── itemcf_metrics.json
+```
 
-ItemKNN（共现/相似度）
+## 7. 下一步计划（Next）
 
-Item2Vec（序列 embedding）
--（可选）更强序列召回：GRU4Rec / SASRec（用于形成“非生成式强对照”）
+### 7.1 召回 baseline 强化（更强对照）
 
-7.2 语义ID v0（离散化表征）
+- ItemKNN（共现/相似度）
+- Item2Vec（序列 embedding）
+- 可选：更强序列召回（GRU4Rec / SASRec）
 
-引入 item 侧信息（caption/category 等）训练/构建 item embedding
+### 7.2 语义 ID 两阶段实现（已确定）
 
-离散化方式：
+> 目标：构建可用于 **生成式召回** 的离散语义表征（Semantic ID）。先用低成本方案打通闭环，再用更强表征与离散化提升语义质量与冷启动能力。
 
-K-means（简单强基线）
+---
 
-VQ / RQ-VAE（更贴近 semantic ID 路线）
+#### 阶段 A：`Item2Vec（仅交互） + K-Means`（MVP，优先实现）
 
-输出：每个 item 的 token 串（Semantic ID）
+- **定位**：最小可行闭环（MVP），快速验证“embedding → 离散化 → semantic ID → 下游可用”
+- **输入**：仅用户-物品交互序列（train 段，严格无泄漏）
+- **方法**：
+  1) 用 Item2Vec（skip-gram/CBOW）训练 item embedding  
+  2) 对 item embedding 做 K-Means 离散化，得到 **单层 semantic token**（或短 token 串）
+- **产出**：
+  - `item_emb`：item embedding（N × d）
+  - `item2sid`：item → semantic_id（cluster id / token）
+  - `*_sid.jsonl`：样本中的 history/target 替换为 semantic token 序列，用于生成式训练
+- **评估 / Sanity Check**：
+  - 覆盖率：train/test 出现 item 的 sid 覆盖率（尤其 train 需接近 100%）
+  - 离散化分布：cluster size 分布（避免极端不均衡）
+  - 下游可用性：基于 semantic id 的 next-token/next-item 训练是否收敛；召回 Recall/NDCG 是否可跑通
 
-7.3 生成式召回（Gen Retrieval）
+---
 
-用语义ID token 序列训练 GPT-style decoder
+#### 阶段 B：`Two-Tower（交互 + 内容） + VQ / RQ-VAE`（增强版，阶段 A 稳定后推进）
 
-训练目标：next-token / next-item generation
+- **定位**：提升表征语义质量 + 冷启动能力；升级离散化表达能力（多层 token 串）
+- **输入**：
+  - 交互特征（user 行为序列/统计等）
+  - item 内容特征（category/caption/title/brand…，按 KuaiRec 可用字段接入）
+- **方法**：
+  1) Two-Tower 学习更强的 item 表征（支持内容信息融入，提升新物品泛化）
+  2) VQ / RQ-VAE 将连续表征离散化为 **多层 token 串**（更强表达能力）
+- **产出**：
+  - `item_emb_v2`：增强 item embedding
+  - `item2sid_v2`：item → 多层离散 token 串（语义 ID 序列）
+  - 下游统一使用 semantic ID：生成式召回与排序阶段复用同一套 token 化接口
+- **评估**：
+  - 冷启动切片：对“train 未出现但有内容特征”的 item，观察 sid 覆盖与下游召回能力
+  - 对比实验：阶段 A vs 阶段 B（召回指标、端到端指标、计算开销）
 
-推断：生成 TopK 候选 item，与传统召回对比 Recall/NDCG
+---
 
-7.4 多任务精排（MTL Ranker）
+**说明**：Two-Tower 的核心作用是学习更强的 item 表征（尤其内容增强与冷启动），离散化与生成式召回阶段统一消费 **item semantic ID**，从而保证端到端链路一致。
 
-结构：Shared-bottom / MMoE / PLE
+### 7.3 生成式召回（Gen Retrieval）
 
-目标：CTR + 完播/停留等多目标（按数据可得性选择）
+- 用语义 ID token 序列训练 GPT-style decoder
+- 训练目标：next-token / next-item generation
+- 推断：生成 TopK 候选 item，与传统召回对比 Recall/NDCG
 
-指标：AUC/GAUC/LogLoss +（可选）Calibration
+### 7.4 多任务精排（MTL Ranker）
 
-7.5 端到端评估与消融实验
+- 结构：Shared-bottom / MMoE / PLE
+- 目标：CTR + 完播/停留等多目标（按数据可得性选择）
+- 指标：AUC/GAUC/LogLoss（可选 Calibration）
 
-无语义ID vs 有语义ID
+### 7.5 端到端评估与消融实验
 
-无生成式 vs 生成式召回
-
-单任务 vs 多任务
-
-端到端 NDCG/HitRate 改善与代价（时延/参数量）
+- 无语义 ID vs 有语义 ID
+- 无生成式 vs 生成式召回
+- 单任务 vs 多任务
+- 端到端 NDCG/HitRate 改善与代价（时延/参数量）

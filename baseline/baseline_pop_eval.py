@@ -5,7 +5,7 @@ from collections import Counter
 
 import pandas as pd
 
-from eval_recall_metrics import evaluate_rows, save_metrics
+from .eval_recall_metrics import evaluate_rows, save_metrics
 
 
 def read_jsonl(path):

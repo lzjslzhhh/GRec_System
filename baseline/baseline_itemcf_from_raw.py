@@ -6,7 +6,7 @@ import os
 from collections import Counter, defaultdict
 from typing import Dict, List, Tuple
 
-from eval_recall_metrics import evaluate_rows, save_metrics
+from .eval_recall_metrics import evaluate_rows, save_metrics
 
 
 def read_eval_jsonl(path: str) -> List[dict]:
@@ -147,6 +147,28 @@ def itemcf_recall(
     return [it for it, _ in ranked[:max_k]]
 
 
+def build_reachable_set(
+    history: List[int],
+    itemcf_topk: Dict[int, List[Tuple[int, float]]],
+    seen_filter: bool = True,
+    recent_n: int = 10,
+) -> set:
+    if not history:
+        return set()
+    seen = set(history) if seen_filter else set()
+    recent = history[-recent_n:] if recent_n > 0 else history
+    reachable = set()
+    for it in recent:
+        nbrs = itemcf_topk.get(it)
+        if not nbrs:
+            continue
+        for j, _ in nbrs:
+            if seen_filter and j in seen:
+                continue
+            reachable.add(j)
+    return reachable
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw_csv", type=str, default="./KuaiRec 2.0/data/small_matrix.csv")
@@ -172,9 +194,11 @@ def main():
     seqs = read_raw_sequences(args.raw_csv)
 
     user_train = {}
+    train_items = set()
     for u, seq in seqs.items():
         train, _, _ = split_by_ratio(seq, args.train_ratio, args.val_ratio)
         user_train[u] = train
+        train_items.update(train)
 
     itemcf_topk = build_itemcf_topk(
         user_train_seqs=user_train,
@@ -186,9 +210,26 @@ def main():
 
     eval_data = read_eval_jsonl(args.eval_jsonl)
     rows = []
+    target_total = 0
+    target_in_train = 0
+    target_in_itemcf = 0
+    target_reachable = 0
     for ex in eval_data:
         history = [int(x) for x in ex["history"]]
         target = int(ex["target"])
+        target_total += 1
+        if target in train_items:
+            target_in_train += 1
+        if target in itemcf_topk:
+            target_in_itemcf += 1
+        if target in build_reachable_set(
+            history=history,
+            itemcf_topk=itemcf_topk,
+            seen_filter=True,
+            recent_n=args.recent_n,
+        ):
+            target_reachable += 1
+
         recs = itemcf_recall(
             history=history,
             itemcf_topk=itemcf_topk,
@@ -201,12 +242,26 @@ def main():
 
     metrics = evaluate_rows(rows, ks)
     metrics["itemcf_size"] = len(itemcf_topk)
+    metrics["train_item_size"] = len(train_items)
+    metrics["target_total"] = target_total
+    metrics["target_in_train"] = target_in_train
+    metrics["target_in_train_ratio"] = (target_in_train / target_total) if target_total else 0.0
+    metrics["target_in_itemcf"] = target_in_itemcf
+    metrics["target_in_itemcf_ratio"] = (target_in_itemcf / target_total) if target_total else 0.0
+    metrics["target_reachable"] = target_reachable
+    metrics["target_reachable_ratio"] = (target_reachable / target_total) if target_total else 0.0
     metrics_out = args.metrics_out or os.path.join(os.path.dirname(args.eval_jsonl), "itemcf_metrics.json")
     save_metrics(metrics_out, metrics)
 
-    print(f"users={metrics['users']}  itemcf_size={len(itemcf_topk)}")
+    print(f"users={metrics['users']}  itemcf_size={len(itemcf_topk)}  train_item_size={len(train_items)}")
     for k in ks:
         print(f"Recall@{k}: {metrics[f'Recall@{k}']:.6f}   NDCG@{k}: {metrics[f'NDCG@{k}']:.6f}")
+    print(
+        "coverage: "
+        f"in_train={target_in_train}/{target_total} ({metrics['target_in_train_ratio']:.6f})  "
+        f"in_itemcf={target_in_itemcf}/{target_total} ({metrics['target_in_itemcf_ratio']:.6f})  "
+        f"reachable={target_reachable}/{target_total} ({metrics['target_reachable_ratio']:.6f})"
+    )
     print(f"metrics_saved: {metrics_out}")
 
 
