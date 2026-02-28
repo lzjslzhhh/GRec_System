@@ -34,11 +34,11 @@ def main():
     ap.add_argument("--eval_jsonl", type=str, default="./data/processed/small_matrix_sw/test.jsonl")
     ap.add_argument("--metrics_out", type=str, default="", help="output json for metrics")
 
-    ap.add_argument("--topk_sim", type=int, default=200, help="neighbors per item")
+    ap.add_argument("--topk_sim", type=int, default=1000, help="neighbors per item")
     ap.add_argument("--ks", type=str, default="20,50,100")
     ap.add_argument("--recent_n", type=int, default=10)
     ap.add_argument("--pos_decay", type=float, default=0.8)
-    ap.add_argument("--device", type=str, default="cpu", help="cpu / cuda / mps")
+    ap.add_argument("--device", type=str, default="cuda", help="cpu / cuda / mps")
 
     args = ap.parse_args()
     ks = [int(x) for x in args.ks.split(",") if x.strip()]

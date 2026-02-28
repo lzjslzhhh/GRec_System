@@ -147,6 +147,41 @@ Recall@100: 0.133239   NDCG@100: 0.057886
 - `itemcf_size=1995` 表示 ItemCF 图中“有邻居可用”的 item 数（`itemcf_topk` 的 key 数）
 - 它小于 `train_item_size=3044`，说明有不少训练 item 没有形成稳定共现邻居（受去重、窗口、`min_co` 等影响）
 - 当前配置下，`target_reachable_ratio=13.32%` 与 `Recall@100=13.32%` 基本一致，说明瓶颈主要不是排序，而是候选覆盖（可达性）上限
+4.5 Item2Vec 评估结果（test）
+
+Item2Vec 用于学习 item embedding，并通过“embedding 近邻”进行召回。该 baseline 的核心诊断点是：候选覆盖（邻居 topk）会直接影响可达性与 Recall 上限。
+
+4.5.1 Item2Vec（邻居 topk = 200）
+users=1411  item2vec_size=2307
+Recall@20 : 0.057406   NDCG@20 : 0.023999
+Recall@50 : 0.067328   NDCG@50 : 0.026043
+Recall@100: 0.068037   NDCG@100: 0.026166
+coverage: in_emb=459/1411 (0.325301)  reachable=96/1411 (0.068037)
+4.5.2 Item2Vec（邻居 topk = 1000）
+users=1411  item2vec_size=2307
+Recall@20 : 0.048901   NDCG@20 : 0.018001
+Recall@50 : 0.102764   NDCG@50 : 0.028636
+Recall@100: 0.150248   NDCG@100: 0.036401
+coverage: in_emb=459/1411 (0.325301)  reachable=222/1411 (0.157335)
+4.5.3 Item2Vec（邻居 topk = 2000）
+users=1411  item2vec_size=2307
+Recall@20 : 0.052445   NDCG@20 : 0.020982
+Recall@50 : 0.111977   NDCG@50 : 0.032526
+Recall@100: 0.212615   NDCG@100: 0.048823
+coverage: in_emb=459/1411 (0.325301)  reachable=364/1411 (0.257973)
+4.5.4 Item2Vec 覆盖率解释（关键结论）
+
+in_emb = 459 / 1411 = 32.53%
+
+含义：只有 32.53% 的 test target 在 item2vec 的词表/embedding 中（严格用 train 训练时，cold item 会导致 hard upper bound）
+
+reachable 会随着邻居 topk 增大显著上升（从 6.80% → 15.73% → 25.80%）
+
+含义：Item2Vec baseline 的主要瓶颈首先是候选覆盖（可达性）
+
+当候选池变大后，Recall@100 提升显著，但 Recall@20 提升有限
+
+含义：扩大候选覆盖后，前排排序压力增大，后续可由更强的精排模型（MTL Ranker）承接优化
 
 ## 5. 运行方式（当前阶段）
 

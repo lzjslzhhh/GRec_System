@@ -10,7 +10,7 @@ def build_topk_neighbors(
     item_ids: np.ndarray,
     emb: np.ndarray,
     topk: int,
-    device: str = "cpu",
+    device: str = "cuda",
 ) -> Dict[int, List[Tuple[int, float]]]:
     item_ids = np.asarray(item_ids, dtype=np.int64)
     emb = np.asarray(emb, dtype=np.float32)
