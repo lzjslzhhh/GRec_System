@@ -21,7 +21,7 @@ except ModuleNotFoundError:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw_csv", type=str, default="./KuaiRec 2.0/data/small_matrix.csv")
-    ap.add_argument("--out_dir", type=str, default="./data/processed/small_matrix_sw/item2vec")
+    ap.add_argument("--out_dir", type=str, default="./artifacts/item2vec")
 
     ap.add_argument("--train_ratio", type=float, default=0.8)
     ap.add_argument("--val_ratio", type=float, default=0.1)
@@ -65,10 +65,18 @@ def main():
     )
 
     os.makedirs(args.out_dir, exist_ok=True)
-    emb_out = os.path.join(args.out_dir, "item_embeddings.npz")
-    np.savez_compressed(emb_out, item_ids=item_ids.astype(np.int64), embeddings=emb.astype(np.float32))
 
-    meta = {
+    # Standardized exports for semantic-id pipeline.
+    item_ids_npy = os.path.join(args.out_dir, "item_ids.npy")
+    item_emb_npy = os.path.join(args.out_dir, "item_emb.npy")
+    np.save(item_ids_npy, item_ids.astype(np.int64))
+    np.save(item_emb_npy, emb.astype(np.float32))
+
+    # Backward-compatible export for existing eval script users.
+    emb_npz = os.path.join(args.out_dir, "item_embeddings.npz")
+    np.savez_compressed(emb_npz, item_ids=item_ids.astype(np.int64), embeddings=emb.astype(np.float32))
+
+    config = {
         "raw_csv": args.raw_csv,
         "vocab_size": int(stats["vocab_size"]),
         "corpus_count": int(stats["corpus_count"]),
@@ -88,12 +96,19 @@ def main():
         "max_seq_len": int(args.max_seq_len),
         "users_with_train_seq": int(len(corpus)),
     }
-    meta_out = os.path.join(args.out_dir, "train_meta.json")
-    with open(meta_out, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+    config_out = os.path.join(args.out_dir, "config.json")
+    with open(config_out, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
 
-    print(f"embeddings_saved: {emb_out}")
-    print(f"meta_saved: {meta_out}")
+    # Keep legacy meta for compatibility.
+    legacy_meta_out = os.path.join(args.out_dir, "train_meta.json")
+    with open(legacy_meta_out, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+    print(f"item_ids_saved: {item_ids_npy}")
+    print(f"item_emb_saved: {item_emb_npy}")
+    print(f"config_saved: {config_out}")
+    print(f"legacy_npz_saved: {emb_npz}")
 
 
 if __name__ == "__main__":

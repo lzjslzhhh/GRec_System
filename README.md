@@ -11,6 +11,8 @@
 - ✅ 仅 `train` 段滑动窗口构造训练样本（next-item）
 - ✅ Popularity 召回 baseline（从原始交互统计 train 热度 + seen filter）
 - ✅ ItemCF 召回 baseline + 覆盖率诊断
+- ✅ Item2Vec baseline（`gensim` 训练 embedding + `torch` 相似度检索）与覆盖率诊断
+- ✅ Item2Vec 训练新增长尾相关参数：`sample`、`ns_exponent`
 - ✅ 离线指标跑通（Recall/NDCG）
 
 ## 1. 目标概述
@@ -147,41 +149,49 @@ Recall@100: 0.133239   NDCG@100: 0.057886
 - `itemcf_size=1995` 表示 ItemCF 图中“有邻居可用”的 item 数（`itemcf_topk` 的 key 数）
 - 它小于 `train_item_size=3044`，说明有不少训练 item 没有形成稳定共现邻居（受去重、窗口、`min_co` 等影响）
 - 当前配置下，`target_reachable_ratio=13.32%` 与 `Recall@100=13.32%` 基本一致，说明瓶颈主要不是排序，而是候选覆盖（可达性）上限
-4.5 Item2Vec 评估结果（test）
+
+### 4.5 Item2Vec 评估结果（test）
 
 Item2Vec 用于学习 item embedding，并通过“embedding 近邻”进行召回。该 baseline 的核心诊断点是：候选覆盖（邻居 topk）会直接影响可达性与 Recall 上限。
 
-4.5.1 Item2Vec（邻居 topk = 200）
+#### 4.5.1 Item2Vec（邻居 topk = 200）
+
+```text
 users=1411  item2vec_size=2307
 Recall@20 : 0.057406   NDCG@20 : 0.023999
 Recall@50 : 0.067328   NDCG@50 : 0.026043
 Recall@100: 0.068037   NDCG@100: 0.026166
 coverage: in_emb=459/1411 (0.325301)  reachable=96/1411 (0.068037)
-4.5.2 Item2Vec（邻居 topk = 1000）
+```
+
+#### 4.5.2 Item2Vec（邻居 topk = 1000）
+
+```text
 users=1411  item2vec_size=2307
 Recall@20 : 0.048901   NDCG@20 : 0.018001
 Recall@50 : 0.102764   NDCG@50 : 0.028636
 Recall@100: 0.150248   NDCG@100: 0.036401
 coverage: in_emb=459/1411 (0.325301)  reachable=222/1411 (0.157335)
-4.5.3 Item2Vec（邻居 topk = 2000）
+```
+
+#### 4.5.3 Item2Vec（邻居 topk = 2000）
+
+```text
 users=1411  item2vec_size=2307
 Recall@20 : 0.052445   NDCG@20 : 0.020982
 Recall@50 : 0.111977   NDCG@50 : 0.032526
 Recall@100: 0.212615   NDCG@100: 0.048823
 coverage: in_emb=459/1411 (0.325301)  reachable=364/1411 (0.257973)
-4.5.4 Item2Vec 覆盖率解释（关键结论）
+```
 
-in_emb = 459 / 1411 = 32.53%
+#### 4.5.4 Item2Vec 覆盖率解释（关键结论）
 
-含义：只有 32.53% 的 test target 在 item2vec 的词表/embedding 中（严格用 train 训练时，cold item 会导致 hard upper bound）
-
-reachable 会随着邻居 topk 增大显著上升（从 6.80% → 15.73% → 25.80%）
-
-含义：Item2Vec baseline 的主要瓶颈首先是候选覆盖（可达性）
-
-当候选池变大后，Recall@100 提升显著，但 Recall@20 提升有限
-
-含义：扩大候选覆盖后，前排排序压力增大，后续可由更强的精排模型（MTL Ranker）承接优化
+- `in_emb = 459 / 1411 = 32.53%`
+  - 含义：只有 32.53% 的 test target 在 item2vec 的词表/embedding 中（严格用 train 训练时，cold item 会导致 hard upper bound）
+- `reachable` 会随着邻居 topk 增大显著上升（`6.80% -> 15.73% -> 25.80%`）
+  - 含义：Item2Vec baseline 的主要瓶颈首先是候选覆盖（可达性）
+- 当候选池变大后，`Recall@100` 提升显著，但 `Recall@20` 提升有限
+  - 含义：扩大候选覆盖后，前排排序压力增大，后续可由更强的精排模型（MTL Ranker）承接优化
 
 ## 5. 运行方式（当前阶段）
 
@@ -226,6 +236,86 @@ python -m baseline.baseline_itemcf_from_raw \
   --ks 20,50,100
 ```
 
+### 5.4 Item2Vec 训练（`gensim`）
+
+```bash
+python baseline/item2vec_train_from_raw.py \
+  --raw_csv "./KuaiRec 2.0/data/small_matrix.csv" \
+  --out_dir "./artifacts/item2vec" \
+  --train_ratio 0.8 \
+  --val_ratio 0.1 \
+  --max_seq_len 200 \
+  --dim 64 \
+  --window_size 5 \
+  --negative 5 \
+  --sample 1e-3 \
+  --ns_exponent 0.75 \
+  --epochs 5 \
+  --min_count 1 \
+  --workers 4 \
+  --seed 42 \
+  --sg 1
+```
+
+### 5.5 Item2Vec 评估（`torch` 相似度检索）
+
+```bash
+python baseline/baseline_item2vec_eval.py \
+  --item_ids_npy "./artifacts/item2vec/item_ids.npy" \
+  --item_emb_npy "./artifacts/item2vec/item_emb.npy" \
+  --eval_jsonl "./data/processed/small_matrix_sw/test.jsonl" \
+  --topk_sim 2000 \
+  --recent_n 10 \
+  --pos_decay 0.8 \
+  --ks 20,50,100 \
+  --device cpu
+```
+
+### 5.6 语义 ID v0（K-Means）构建
+
+```bash
+python semantic_id/build_semantic_id_kmeans.py \
+  --item_ids_npy "./artifacts/item2vec/item_ids.npy" \
+  --item_emb_npy "./artifacts/item2vec/item_emb.npy" \
+  --k 512 \
+  --seed 42 \
+  --out_dir "./artifacts/semantic_id/kmeans_k512"
+```
+
+### 5.7 将 `train/val/test.jsonl` 转为 SID 序列
+
+```bash
+python semantic_id/convert_jsonl_to_sid.py \
+  --in_jsonl "./data/processed/small_matrix_sw/train.jsonl" \
+  --item2sid "./artifacts/semantic_id/kmeans_k512/item2sid.json" \
+  --out_jsonl "./data/processed/small_matrix_sw_sid/kmeans_k512/train_sid.jsonl" \
+  --oov_strategy drop \
+  --keep_item_fields true
+
+python semantic_id/convert_jsonl_to_sid.py \
+  --in_jsonl "./data/processed/small_matrix_sw/val.jsonl" \
+  --item2sid "./artifacts/semantic_id/kmeans_k512/item2sid.json" \
+  --out_jsonl "./data/processed/small_matrix_sw_sid/kmeans_k512/val_sid.jsonl" \
+  --oov_strategy map_to_unk \
+  --keep_item_fields true
+
+python semantic_id/convert_jsonl_to_sid.py \
+  --in_jsonl "./data/processed/small_matrix_sw/test.jsonl" \
+  --item2sid "./artifacts/semantic_id/kmeans_k512/item2sid.json" \
+  --out_jsonl "./data/processed/small_matrix_sw_sid/kmeans_k512/test_sid.jsonl" \
+  --oov_strategy map_to_unk \
+  --keep_item_fields true
+```
+
+### 5.8 SID 空间 token popularity baseline（sanity check）
+
+```bash
+python semantic_id/token_pop_baseline.py \
+  --train_jsonl "./data/processed/small_matrix_sw_sid/kmeans_k512/train_sid.jsonl" \
+  --eval_jsonl "./data/processed/small_matrix_sw_sid/kmeans_k512/test_sid.jsonl" \
+  --ks 20,50,100
+```
+
 ## 6. 目录结构
 
 ```text
@@ -236,10 +326,34 @@ GRec_System/
 │       └── small_matrix.csv
 ├── preprocess/
 │   └── preprocess_kuairec.py
+├── semantic_id/
+│   ├── build_semantic_id_kmeans.py
+│   ├── convert_jsonl_to_sid.py
+│   └── token_pop_baseline.py
 ├── baseline/
 │   ├── baseline_pop_eval.py
 │   ├── baseline_itemcf_from_raw.py
-│   └── eval_recall_metrics.py
+│   ├── baseline_item2vec_eval.py
+│   ├── item2vec_train_from_raw.py
+│   ├── eval_recall_metrics.py
+│   └── item2vec/
+│       ├── __init__.py
+│       ├── data.py
+│       ├── train.py
+│       ├── recall.py
+│       └── model.py
+├── artifacts/
+│   ├── item2vec/
+│   │   ├── item_ids.npy
+│   │   ├── item_emb.npy
+│   │   ├── config.json
+│   │   └── item_embeddings.npz
+│   └── semantic_id/
+│       └── kmeans_k512/
+│           ├── item2sid.json
+│           ├── centers.npy
+│           ├── cluster_stats.json
+│           └── coverage.json
 └── data/
     └── processed/
         └── small_matrix_sw/
@@ -248,7 +362,8 @@ GRec_System/
             ├── test.jsonl
             ├── stats.json
             ├── pop_metrics.json
-            └── itemcf_metrics.json
+            ├── itemcf_metrics.json
+            └── item2vec_metrics.json
 ```
 
 ## 7. 下一步计划（Next）
@@ -280,6 +395,16 @@ GRec_System/
   - 覆盖率：train/test 出现 item 的 sid 覆盖率（尤其 train 需接近 100%）
   - 离散化分布：cluster size 分布（避免极端不均衡）
   - 下游可用性：基于 semantic id 的 next-token/next-item 训练是否收敛；召回 Recall/NDCG 是否可跑通
+
+**阶段 A 当前最小闭环产物（已实现）**：
+
+- Item2Vec 标准导出：`artifacts/item2vec/{item_ids.npy,item_emb.npy,config.json}`
+- K-Means 语义 ID：`artifacts/semantic_id/kmeans_k{K}/item2sid.json`
+- SID 数据集转换：`train_sid.jsonl / val_sid.jsonl / test_sid.jsonl` 及对应 `*.stats.json`
+- 核心统计：
+  - `cluster_stats.json`：`min/mean/median/p95/max`、`top10_largest_clusters`
+  - `coverage.json`：`N_items/K/D`
+  - `*.stats.json`：`total_lines/kept_lines/dropped_oov/unk_count/sid_vocab_size`
 
 ---
 

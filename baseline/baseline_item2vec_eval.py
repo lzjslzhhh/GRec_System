@@ -19,18 +19,28 @@ except ModuleNotFoundError:
     from baseline.item2vec.recall import build_topk_neighbors, reachable_set, recall_from_neighbors
 
 
-def load_item_embeddings(path: str):
+def load_item_embeddings_from_npz(path: str):
     z = np.load(path)
     item_ids = z["item_ids"].astype(np.int64)
     emb = z["embeddings"].astype(np.float32)
     if item_ids.ndim != 1 or emb.ndim != 2 or emb.shape[0] != item_ids.shape[0]:
-        raise ValueError("Invalid embedding file format. Expected item_ids[N] and embeddings[N, D].")
+        raise ValueError("Invalid npz format. Expected item_ids[N] and embeddings[N, D].")
+    return item_ids, emb
+
+
+def load_item_embeddings_from_npy(item_ids_npy: str, item_emb_npy: str):
+    item_ids = np.load(item_ids_npy).astype(np.int64)
+    emb = np.load(item_emb_npy).astype(np.float32)
+    if item_ids.ndim != 1 or emb.ndim != 2 or emb.shape[0] != item_ids.shape[0]:
+        raise ValueError("Invalid npy format. Expected item_ids[N] and item_emb[N, D].")
     return item_ids, emb
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--emb_npz", type=str, default="./data/processed/small_matrix_sw/item2vec/item_embeddings.npz")
+    ap.add_argument("--emb_npz", type=str, default="")
+    ap.add_argument("--item_ids_npy", type=str, default="./artifacts/item2vec/item_ids.npy")
+    ap.add_argument("--item_emb_npy", type=str, default="./artifacts/item2vec/item_emb.npy")
     ap.add_argument("--eval_jsonl", type=str, default="./data/processed/small_matrix_sw/test.jsonl")
     ap.add_argument("--metrics_out", type=str, default="", help="output json for metrics")
 
@@ -38,13 +48,19 @@ def main():
     ap.add_argument("--ks", type=str, default="20,50,100")
     ap.add_argument("--recent_n", type=int, default=10)
     ap.add_argument("--pos_decay", type=float, default=0.8)
-    ap.add_argument("--device", type=str, default="cuda", help="cpu / cuda / mps")
+    ap.add_argument("--device", type=str, default="cpu", help="cpu / cuda / mps")
 
     args = ap.parse_args()
     ks = [int(x) for x in args.ks.split(",") if x.strip()]
     max_k = max(ks)
 
-    item_ids, emb = load_item_embeddings(args.emb_npz)
+    if args.emb_npz:
+        item_ids, emb = load_item_embeddings_from_npz(args.emb_npz)
+    elif os.path.exists(args.item_ids_npy) and os.path.exists(args.item_emb_npy):
+        item_ids, emb = load_item_embeddings_from_npy(args.item_ids_npy, args.item_emb_npy)
+    else:
+        legacy_npz = "./data/processed/small_matrix_sw/item2vec/item_embeddings.npz"
+        item_ids, emb = load_item_embeddings_from_npz(legacy_npz)
     item_set = set(int(x) for x in item_ids.tolist())
     neighbors = build_topk_neighbors(item_ids=item_ids, emb=emb, topk=args.topk_sim, device=args.device)
 
