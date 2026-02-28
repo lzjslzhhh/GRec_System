@@ -48,7 +48,7 @@ def main():
     ap.add_argument("--ks", type=str, default="20,50,100")
     ap.add_argument("--recent_n", type=int, default=10)
     ap.add_argument("--pos_decay", type=float, default=0.8)
-    ap.add_argument("--device", type=str, default="cpu", help="cpu / cuda / mps")
+    ap.add_argument("--device", type=str, default="cuda", help="cpu / cuda / mps")
 
     args = ap.parse_args()
     ks = [int(x) for x in args.ks.split(",") if x.strip()]
