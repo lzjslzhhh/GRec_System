@@ -71,7 +71,7 @@ def main():
 
             history_sid, h_unk, h_oov = map_items(history_item, item2sid, args.oov_strategy, unk_sid)
             target_sid_list, t_unk, t_oov = map_items([target_item], item2sid, args.oov_strategy, unk_sid)
-            if h_oov or t_oov:
+            if args.oov_strategy == "drop" and (h_oov or t_oov):
                 dropped_oov += 1
                 continue
 

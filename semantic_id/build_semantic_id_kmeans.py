@@ -33,15 +33,15 @@ def cluster_stats(labels: np.ndarray, k: int) -> Dict[str, object]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--item_ids_npy", type=str, default="./artifacts/item2vec/item_ids.npy")
-    ap.add_argument("--item_emb_npy", type=str, default="./artifacts/item2vec/item_emb.npy")
+    ap.add_argument("--item_ids_npy", type=str, default="../artifacts/item2vec/item_ids.npy")
+    ap.add_argument("--item_emb_npy", type=str, default="../artifacts/item2vec/item_emb.npy")
     ap.add_argument("--k", type=int, default=512)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out_dir", type=str, default="")
     ap.add_argument("--disable_l2_norm", action="store_true", help="disable l2 normalization before k-means")
     args = ap.parse_args()
 
-    out_dir = args.out_dir or f"./artifacts/semantic_id/kmeans_k{args.k}"
+    out_dir = args.out_dir or f"../artifacts/semantic_id/kmeans_k{args.k}"
     os.makedirs(out_dir, exist_ok=True)
 
     item_ids = np.load(args.item_ids_npy).astype(np.int64)

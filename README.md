@@ -447,3 +447,14 @@ GRec_System/
 - 无生成式 vs 生成式召回
 - 单任务 vs 多任务
 - 端到端 NDCG/HitRate 改善与代价（时延/参数量）
+
+## 8. 生成式召回 TODO（主线）
+
+- [ ] 定义统一 codebook 接口：`encode_item(item_id) -> codes`（先支持 `L=1`，预留 `L>1` 给 RQ-VAE）
+- [ ] 新增数据转换：将现有样本转为 `history_codes: List[List[int]]` 与 `target_codes: List[int]`
+- [ ] 实现 Decoder-only 训练脚本（teacher forcing，next-token CE）
+- [ ] 实现前缀 Trie 约束解码（仅允许合法 code 后继）
+- [ ] 打通 TopK item 生成与 Recall/NDCG 离线评估
+- [ ] 先跑通 `IdentityCodebook`（item 单 token）基线
+- [ ] 接入 `RQVAECodebook`（item 多级 code），保持同一训练/推理框架
+- [ ] 完成 A/B：Identity vs RQ-VAE（效果、时延、计算开销）
