@@ -458,3 +458,75 @@ GRec_System/
 - [ ] 先跑通 `IdentityCodebook`（item 单 token）基线
 - [ ] 接入 `RQVAECodebook`（item 多级 code），保持同一训练/推理框架
 - [ ] 完成 A/B：Identity vs RQ-VAE（效果、时延、计算开销）
+
+## 9. 生成式召回语义ID组合实验（新增）
+
+### 9.1 一键运行（推荐）
+
+```bash
+python experiments/run_experiments.py \
+  --raw_csv "./KuaiRec 2.0/data/small_matrix.csv" \
+  --train_jsonl "./data/processed/small_matrix_sw/train.jsonl" \
+  --val_jsonl "./data/processed/small_matrix_sw/val.jsonl" \
+  --test_jsonl "./data/processed/small_matrix_sw/test.jsonl" \
+  --k_list 256,512,1024 \
+  --oov_strategy map_to_unk \
+  --epochs 8 \
+  --batch_size 256 \
+  --max_len 50 \
+  --d_model 128 \
+  --n_layers 2 \
+  --n_heads 4 \
+  --topk_tokens 100 \
+  --topk_items 100 \
+  --device cuda
+```
+
+输出：
+- `experiments/runs/<exp_name>/...`（每个 K 的中间产物、checkpoint、metrics）
+- `experiments/results.csv`（K × Expand-1/2 的对照表）
+
+### 9.2 续训
+
+```bash
+python gen_retrieval/train_genrec_sid.py \
+  --train_jsonl "./experiments/runs/E1_Item2Vec_KMeans_K512/train_sid.jsonl" \
+  --val_jsonl "./experiments/runs/E1_Item2Vec_KMeans_K512/val_sid.jsonl" \
+  --run_dir "./experiments/runs/E1_Item2Vec_KMeans_K512" \
+  --kmeans_k 512 \
+  --max_len 50 \
+  --d_model 128 \
+  --n_layers 2 \
+  --n_heads 4 \
+  --epochs 8 \
+  --resume \
+  --ckpt_path "./experiments/runs/E1_Item2Vec_KMeans_K512/checkpoint_last.pt"
+```
+
+说明：
+- 续训会校验关键配置：`vocab_size/K/max_len/d_model/n_layers/n_heads`
+- 不一致会直接报错，避免误续训
+
+### 9.3 单独推断 + 展开评估
+
+```bash
+python gen_retrieval/infer_expand_eval.py \
+  --run_dir "./experiments/runs/E1_Item2Vec_KMeans_K512" \
+  --raw_csv "./KuaiRec 2.0/data/small_matrix.csv" \
+  --test_jsonl "./experiments/runs/E1_Item2Vec_KMeans_K512/test_sid.jsonl" \
+  --expand_strategy expand_pop \
+  --topk_tokens 100 \
+  --topk_items 100 \
+  --device cuda
+
+python gen_retrieval/infer_expand_eval.py \
+  --run_dir "./experiments/runs/E1_Item2Vec_KMeans_K512" \
+  --raw_csv "./KuaiRec 2.0/data/small_matrix.csv" \
+  --test_jsonl "./experiments/runs/E1_Item2Vec_KMeans_K512/test_sid.jsonl" \
+  --expand_strategy expand_embed \
+  --item_ids_npy "./artifacts/item2vec/item_ids.npy" \
+  --item_emb_npy "./artifacts/item2vec/item_emb.npy" \
+  --topk_tokens 100 \
+  --topk_items 100 \
+  --device cuda
+```

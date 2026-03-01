@@ -67,9 +67,9 @@ def pack_eval(user_id, full_seq):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data_dir", type=str, default="./KuaiRec 2.0/data")
+    ap.add_argument("--data_dir", type=str, default="KuaiRec 2.0/data")
     ap.add_argument("--matrix", type=str, default="small_matrix.csv")
-    ap.add_argument("--out_dir", type=str, default="./data/processed")
+    ap.add_argument("--out_dir", type=str, default="data/processed")
     ap.add_argument("--min_seq_len", type=int, default=5)
     ap.add_argument("--train_ratio", type=float, default=0.8)
     ap.add_argument("--val_ratio", type=float, default=0.1)
@@ -78,7 +78,7 @@ def main():
     ap.add_argument("--max_seq_len", type=int, default=50)
     ap.add_argument("--min_hist_len", type=int, default=3)
     ap.add_argument("--stride", type=int, default=1)
-    ap.add_argument("--max_train_samples_per_user", type=int, default=200)
+    ap.add_argument("--max_train_samples_per_user", type=int, default=1000)
 
     args = ap.parse_args()
 

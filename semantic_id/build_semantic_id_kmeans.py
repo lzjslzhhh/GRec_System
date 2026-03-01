@@ -35,7 +35,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--item_ids_npy", type=str, default="../artifacts/item2vec/item_ids.npy")
     ap.add_argument("--item_emb_npy", type=str, default="../artifacts/item2vec/item_emb.npy")
-    ap.add_argument("--k", type=int, default=512)
+    ap.add_argument("--k", type=int, default=1024)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out_dir", type=str, default="")
     ap.add_argument("--disable_l2_norm", action="store_true", help="disable l2 normalization before k-means")
